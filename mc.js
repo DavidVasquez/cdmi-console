@@ -7,7 +7,7 @@ var prog = require('commander'),
     tty = require('tty'),
     util = require('util');
 
-prog.version('0.0.1');
+prog.version('0.0.3');
 prog.option('-h, --host <hostname>', 'specify the host to connect to');
 prog.parse(process.argv);
 
@@ -15,7 +15,7 @@ var CDMI_BASE = '/cdmi';
 
 var appState = {
     pathParts: ['cdmi'],
-    currentDirectory: "cdmi",
+    currentDirectory: 'cdmi',
     cache: []
 };
 
@@ -39,7 +39,7 @@ rl.question('Username: ', function(answer) {
     });
 });
 
-var currentObject = null;
+var currentObject = {};
 
 rl.write('administrator');
 
@@ -48,7 +48,17 @@ rl.on('line', function(line) {
 }).on('close', quit);
 
 function completer(line) {
-    return [currentObject.children, line];
+    var results = [];
+    var children = currentObject.children || [];
+
+    for (i = 0; i < children.length; i++) {
+        var item = children[i];
+        if (item.indexOf(line) >= 0) {
+            results.push(item);
+        }
+    }
+    
+    return [results, line];
 }
 
 function quit() {
@@ -77,6 +87,7 @@ function handleRequest(line) {
             clearTerminal();
             break;
         case 'header':
+        case 'headers':
             setHeader(request);
             break;
         case 'download':
@@ -128,14 +139,29 @@ function setHeader(request) {
     } else if (key && key.length > 0) {
         delete headers[key];
     } else {
-        util.puts(util.inspect(headers));
+        var output = '';
+
+        for (key in headers) {
+            output += '> ' + key + ': ' + headers[key] + '\n';
+        }
+
+        console.log();
+        util.puts(output);
     }
 
     prompt();
 }
 
 function download(request) {
-    console.log('args', arguments);
+    /*console.log('args', currentObject, arguments);
+    var dlRequest = {
+        method: 'dl',
+        uri: currentObject.parentURI + currentObject.objectName,
+        args: request.args
+    };
+    getObject(dlRequest, function(object) {
+        console.log(object);
+    });*/
     prompt();
 }
 
@@ -156,14 +182,31 @@ function upDirectory(request) {
 function changeDirectory(request) {
     var objectName = request.method;
     if (isValidPath(objectName)) {
-        appState.pathParts.push(objectName);
-        appState.currentDirectory = objectName;
-        //prompt();
-        uri = '/' + appState.pathParts.join('/');
+        if (isRootPath(objectName)) {
+            appState.pathParts = ['cdmi'];
+            appState.currentDirectory = 'cdmi';
+        } else {
+            objectName = objectName.replace(/\//g, '');
+            appState.pathParts.push(objectName);
+            appState.currentDirectory = objectName;
+        }
+
+        var uri = computeURI();
+
         updateCache({method: 'get', uri: uri});
     } else {
         util.puts('That path or command does not exist');
         prompt();
+    }
+}
+
+function computeURI() {
+    return '/' + appState.pathParts.join('/');
+}
+
+function isRootPath(path) {
+    if (path === '/') {
+        return true;
     }
 }
 
@@ -174,11 +217,13 @@ function isValidPath(path) {
         return false;
     }
 
-    if (children.indexOf(path + '/') >= 0) { // If dir exists
+    if (isRootPath(path)) { // If root
+        return true;
+    } else if (children.indexOf(path + '/') >= 0) { // If dir exists
         return true;
     } else if (children.indexOf(path) >= 0) { // If object exists
         return true;
-    } else if (path.indexOf('/') >= 0) { // If path exists
+    } else if (path.indexOf('/') >= 0) { // If path parts given
         return true;
     } else {
         return false;
@@ -224,8 +269,7 @@ function getObject(request, cb) {
 
     var req = https.request(options, function(res) {
         if (res.statusCode != 200) {
-            util.puts('Oops...there was an error processing your request:');
-            util.puts('Status Code: ', res.statusCode);
+            util.puts(showErrorMessage(res.statusCode));
             prompt();
             return;
         }
@@ -329,14 +373,23 @@ function init() {
 }
 
 function welcome() {
-    util.puts('> MezeoFile Console. Version ' + prog.version(),
-              '> © 2012 Mezeo Software Corp. All Rights Reserved');
-
-    util.print('\n');
+    util.puts('\n> CDMI Console. Version ' + prog.version() + '\n');
 }
 
 function getRoot() {
     updateCache({method: 'GET', uri: CDMI_BASE});
+}
+
+function showErrorMessage(status) {
+    var message = 'There was an error processing your request...';
+
+    switch (status) {
+        case 403: message = 'Your username or password is incorrect'; break;
+        case 404: message = 'The object could not be found'; break;
+        case 500: message = 'There was an error on the server'; break;
+    }
+
+    return message;
 }
 
 function updateCache(request) {
