@@ -11,11 +11,12 @@ prog.version('0.0.3');
 prog.option('-h, --host <hostname>', 'specify the host to connect to');
 prog.parse(process.argv);
 
-var CDMI_BASE = '/cdmi';
+var CDMI = 'cdmi';
+var CDMI_BASE = '/'.concat(CDMI);
 
 var appState = {
-    pathParts: ['cdmi'],
-    currentDirectory: 'cdmi',
+    pathParts: [CDMI],
+    currentDirectory: CDMI,
     cache: []
 };
 
@@ -180,18 +181,21 @@ function upDirectory(request) {
 }
 
 function changeDirectory(request) {
-    var objectName = request.method;
-    if (isValidPath(objectName)) {
-        if (isRootPath(objectName)) {
-            appState.pathParts = ['cdmi'];
-            appState.currentDirectory = 'cdmi';
+    var path = request.method;
+    if (isValidPath(path)) {
+        var pathParts = getPathParts(path);
+
+        if (isRootPath(path)) {
+            appState.pathParts = [CDMI].concat(pathParts);
         } else {
-            objectName = objectName.replace(/\//g, '');
-            appState.pathParts.push(objectName);
-            appState.currentDirectory = objectName;
+            pathParts.forEach(function(part) {
+                appState.pathParts.push(part);
+            });
         }
 
-        var uri = computeURI();
+        appState.currentDirectory = appState.pathParts.slice(-1).toString();
+
+        var uri = getPath();
 
         updateCache({method: 'get', uri: uri});
     } else {
@@ -200,12 +204,29 @@ function changeDirectory(request) {
     }
 }
 
-function computeURI() {
+function getPathParts(path) {
+    // Remove cdmi from path
+    path = path.replace('/cdmi/', '/');
+
+    // Remove leading slash
+    if (path.slice(0, 1) === '/') {
+        path = path.substring(1, path.length);
+    }
+
+    // Remove trailing slash
+    if (path.slice(-1) === '/') {
+        path = path.substring(0, path.length - 1);
+    }
+
+    return (path.length > 0) ? path.split('/') : [];
+}
+
+function getPath() {
     return '/' + appState.pathParts.join('/');
 }
 
 function isRootPath(path) {
-    if (path === '/') {
+    if (path.indexOf('/') === 0) {
         return true;
     }
 }
@@ -387,6 +408,7 @@ function showErrorMessage(status) {
         case 403: message = 'Your username or password is incorrect'; break;
         case 404: message = 'The object could not be found'; break;
         case 500: message = 'There was an error on the server'; break;
+        default: message = 'There was an error'; break;
     }
 
     return message;
