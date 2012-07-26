@@ -8,7 +8,6 @@ var prog = require('commander'),
     util = require('util');
 
 prog.version('0.0.3');
-prog.option('-h, --host <hostname>', 'specify the host to connect to');
 prog.parse(process.argv);
 
 var CDMI = 'cdmi';
@@ -27,9 +26,20 @@ var contentTypes = {
     queue: 'application/cdmi-queue'
 };
 
-var host = prog.host || 'localhost',
+var commands = [
+    'cd',
+    'clear',
+    'exit',
+    'header',
+    'headers',
+    'help',
+    'pwd',
+    'show'
+];
+
+var host = prog.args[0] || 'localhost',
     rl = readline.createInterface(process.stdin, process.stdout, completer),
-    prefix = host + ':' + appState.currentDirectory + '> ',
+    prefix = util.format('%s:%s>', host, appState.currentDirectory),
     auth = '';
 
 rl.question('Username: ', function(answer) {
@@ -100,6 +110,9 @@ function handleRequest(line) {
         case '..':
             upDirectory(request);
             break;
+        case 'help':
+            showHelp();
+            break;
         case 'exit':
         case 'quit':
         case 'q':
@@ -154,6 +167,15 @@ function showHeaders(request) {
     }
 
     util.puts(output);
+    prompt();
+}
+
+function showHelp() {
+    util.puts('\n> Suported Commands:');
+    commands.forEach(function(cmd) {
+        util.puts(util.format('    %s', cmd));
+    });
+    util.puts('\n');
     prompt();
 }
 
