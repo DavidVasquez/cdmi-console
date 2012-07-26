@@ -88,8 +88,10 @@ function handleRequest(line) {
             clearTerminal();
             break;
         case 'header':
-        case 'headers':
             setHeader(request);
+            break;
+        case 'headers':
+            showHeaders(request);
             break;
         case 'download':
         case 'dl':
@@ -131,25 +133,27 @@ function setHeader(request) {
     var key = request.args[0];
     var value = request.args[1];
 
-    if (key) {
-        key = key.substring(0, key.length - 1);
-    }
+    key = (key) ? key.replace(':', '') : '';
 
     if (value && value.length > 0) {
         headers[key] = value;
     } else if (key && key.length > 0) {
         delete headers[key];
     } else {
-        var output = '';
-
-        for (key in headers) {
-            output += '> ' + key + ': ' + headers[key] + '\n';
-        }
-
-        console.log();
-        util.puts(output);
+        util.puts('No key specified');
     }
 
+    prompt();
+}
+
+function showHeaders(request) {
+    var output = '\n';
+
+    for (key in headers) {
+        output += '> ' + key + ': ' + headers[key] + '\n';
+    }
+
+    util.puts(output);
     prompt();
 }
 
