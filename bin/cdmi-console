@@ -1,0 +1,14 @@
+#!/usr/bin/env node
+
+var prog = require('commander'),
+    cdmiConsole = require('cdmi-console');
+
+prog.version('0.0.3');
+prog.parse(process.argv);
+
+var host = prog.args[0] || 'localhost';
+var port = prog.args[1] || '443';
+
+var console = cdmiConsole.create(host, port);
+
+console.initialize();
