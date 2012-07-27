@@ -400,7 +400,7 @@ function get(request, cb, eb) {
 
     var req = https.request(options, function(res) {
         if (res.statusCode != 200) {
-            util.puts(showErrorMessage(res.statusCode));
+            util.puts(getErrorMessage(res.statusCode));
             prompt();
             return;
         }
@@ -444,7 +444,7 @@ function put(request, cb, eb) {
 
     var req = https.request(options, function(res) {
         if (res.statusCode !== 200) {
-            util.puts(showErrorMessage(res.statusCode));
+            util.puts(getErrorMessage(res.statusCode));
             prompt();
             return;
         }
@@ -524,7 +524,7 @@ function getRoot() {
     updateCache({method: 'GET', uri: CDMI_BASE});
 }
 
-function showErrorMessage(status) {
+function getErrorMessage(status) {
     var message = 'There was an error processing your request...';
 
     switch (status) {
