@@ -26,6 +26,25 @@ var contentTypes = {
     queue: 'application/cdmi-queue'
 };
 
+var validTypes = {};
+validTypes[contentTypes.domain] = [
+    contentTypes.domain,
+    contentTypes.container,
+    contentTypes.object
+];
+validTypes[contentTypes.container] = [
+    contentTypes.container,
+    contentTypes.object,
+    contentTypes.queue
+];
+validTypes[contentTypes.queue] = [];
+validTypes[contentTypes.object] = [];
+
+var headers = {
+    'Accept': '*/*',
+    'x-cdmi-specification-version': '1.0.1'
+};
+
 var commands = [
     'cd',
     'clear',
@@ -38,25 +57,40 @@ var commands = [
 ];
 
 var host = prog.args[0] || 'localhost',
+    port = 443,
     rl = readline.createInterface(process.stdin, process.stdout, completer),
     prefix = util.format('%s:%s>', host, appState.currentDirectory),
+    user = '',
+    pass = '',
     auth = '';
-
-rl.question('Username: ', function(answer) {
-    auth = answer;
-    rl.question('Password: ', function(answer) {
-        auth += ':' + answer;
-        init();
-    });
-});
 
 var currentObject = {};
 
-rl.write('administrator');
+init();
 
-rl.on('line', function(line) {
-    handleRequest(line);
-}).on('close', quit);
+function init() {
+    rl.on('line', function(line) {
+        handleRequest(line);
+    }).on('close', quit);
+
+    login(function() {
+        welcome();
+        prompt(prefix);
+        getRoot();
+    });
+}
+
+function login(cb) {
+    rl.question('Username: ', function(username) {
+        user = username;
+        rl.question('Password: ', function(password) {
+            pass = password;
+            cb();
+        });
+    });
+
+    rl.write('administrator');
+}
 
 function completer(line) {
     var results = [];
@@ -72,10 +106,6 @@ function completer(line) {
     return [results, line];
 }
 
-function quit() {
-    process.exit(0);
-}
-
 function handleRequest(line) {
     var request = parseRequest(line);
     switch(request.method) {
@@ -89,6 +119,9 @@ function handleRequest(line) {
             break;
         case 'cd':
             changeDirectory(request);
+            break;
+        case 'create':
+            createObject(request);
             break;
         case 'pwd':
             printDirectory(request);
@@ -125,14 +158,14 @@ function handleRequest(line) {
 }
 
 function showInfo(request) {
-    var uri = '/' + appState.pathParts.join('/');
+    var uri = getPath();
     var object = showObject({method: 'GET', uri: uri, args: request.args});
 
     //prompt();
 }
 
 function printDirectory() {
-    var output = '/' + appState.pathParts.join('/');
+    var output = getPath();
     util.puts(output);
     prompt();
 }
@@ -186,7 +219,7 @@ function download(request) {
         uri: currentObject.parentURI + currentObject.objectName,
         args: request.args
     };
-    getObject(dlRequest, function(object) {
+    get(dlRequest, function(object) {
         console.log(object);
     });*/
     prompt();
@@ -278,7 +311,7 @@ function isValidPath(path) {
 }
 
 function showObject(request) {
-    getObject(request, function(object) {
+    get(request, function(object) {
         var cdmiObject = JSON.parse(object);
         var key = (request.args) ? request.args[0] : '';
         var output = '';
@@ -297,18 +330,69 @@ function showObject(request) {
     });
 }
 
-var headers = {
-    'Accept': '*/*',
-    'x-cdmi-specification-version': '1.0.1'
-};
+function createObject(request) {
+    var objectType = request.args[0] || '';
+    var objectName = request.args[1] || '';
+    var contentType = getContentType(objectType);
 
-function getObject(request, cb) {
+    if (isValidContext(contentType)) {
+        rl.question('... ', function(body) {
+            var url = getPath().concat('/').concat(objectName);
+            var args = [body].concat(request.args);
+            put({method: 'PUT', uri: url, args: args}, function() {
+                console.log('done');
+                prompt();
+            });
+            console.log(body);
+        });
+    } else {
+        if (!contentTypes[objectType]) {
+            util.puts('Not a valid object');
+            prompt();
+            return;
+        }
+
+        var output = '',
+            typesList = [];
+
+        var types = getValidTypes(contentType);
+        types.forEach(function(type) {
+            for (typeName in contentTypes) {
+                if (contentTypes[typeName] === type) {
+                    typesList.push(typeName);
+                }
+            }
+        });
+
+        output += util.format('\n> You can\'t create a %s here.\n', objectType);
+        output += util.format('  Stuff you can create:\n    %s\n', typesList.join(', '));
+
+        util.puts(output);
+        prompt();
+    }
+}
+
+function getContentType(objectType) {
+    return contentTypes[objectType];
+}
+
+function getValidTypes(contentType) {
+    return validTypes[contentType];
+}
+
+function isValidContext(contentType) {
+    var types = validTypes[currentObject.objectType];
+
+    return types.indexOf(contentType) >= 0;
+}
+
+function get(request, cb, eb) {
     var options = {
         host: host,
-        port: 443,
+        port: port,
         path: request.uri,
         method: request.method,
-        auth: auth,
+        auth: getAuth(),
         headers: headers
     };
 
@@ -334,8 +418,7 @@ function getObject(request, cb) {
     });
 
     req.on('error', function(e) {
-        util.puts('Oops! There was a problem connecting to your server.');
-        util.puts('');
+        util.puts('Oops! There was a problem connecting to your server.\n');
         util.puts(e);
         prompt();
     });
@@ -343,33 +426,49 @@ function getObject(request, cb) {
     req.end();
 }
 
-function putObject(request) {
+function put(request, cb, eb) {
     var options = {
         host: host,
-        port: 443,
-        path: '/' +appState.pathParts.join('/') + '/' + request.objectName,
-        method: request.method,
-        auth: auth,
-        headers: {
-            'x-cdmi-specification-version': '1.0.1',
-            'content-type': contentTypes[request.contentType],
-            accept: '*/*'
-        }
+        port: port,
+        path: request.uri,
+        method: 'PUT',
+        auth: getAuth(),
+        headers: headers
     };
+
+    var body = request.args[0];
+    console.log(request);
+    console.log(options);
+
+    var responseText = '';
 
     var req = https.request(options, function(res) {
         if (res.statusCode !== 200) {
-            util.puts('Oops...there was an error processing your request. Please try again.');
+            util.puts(showErrorMessage(res.statusCode));
             prompt();
             return;
         }
-        res.on('close', function() {
-            util.puts('Request completed successfully.');
-            prompt();
+        res.setEncoding('utf8');
+        res.on('data', function(chunk) {
+            responseText += chunk.toString();
         });
     });
 
-    //req.write(request.body);
+    req.on('close', function() {
+        if (responseText) {
+            cb(responseText);
+            prompt();
+        }
+    });
+
+    req.on('error', function(e) {
+        util.puts('Oops! There was a problem connecting to your server.\n');
+        util.puts(e);
+        prompt();
+    });
+
+    console.log(body);
+    req.write(body);
     req.end();
 }
 
@@ -407,16 +506,14 @@ function parseRequest(line) {
     return request;
 }
 
+function getAuth() {
+    return user.concat(':').concat(pass);
+}
+
 function prompt() {
     var prefix = host + ':' + appState.currentDirectory + '> ';
     rl.setPrompt(prefix, prefix.length);
     rl.prompt();
-}
-
-function init() {
-    welcome();
-    prompt(prefix);
-    getRoot();
 }
 
 function welcome() {
@@ -434,14 +531,18 @@ function showErrorMessage(status) {
         case 403: message = 'Your username or password is incorrect'; break;
         case 404: message = 'The object could not be found'; break;
         case 500: message = 'There was an error on the server'; break;
-        default: message = 'There was an error'; break;
+        default: message = 'There was an error (Status: ' + status + ')'; break;
     }
 
     return message;
 }
 
 function updateCache(request) {
-    getObject(request, function(object) {
+    get(request, function(object) {
         currentObject = JSON.parse(object);
     });
+}
+
+function quit() {
+    process.exit(0);
 }
