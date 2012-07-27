@@ -258,7 +258,7 @@ function changeDirectory(request) {
 
         updateCache({method: 'get', uri: uri});
     } else {
-        util.puts('That path or command does not exist');
+        util.puts('The path or command does not exist');
         prompt();
     }
 }
